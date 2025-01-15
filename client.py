@@ -7,10 +7,16 @@ from queue import Queue
 
 LOCALHOST = "localhost"
 EXPECTED_MAGIC_CO0KIE = 0xabcddcba
+FIRST_UDP_PORT = 50000
+LAST_UDP_PORT = 60000
+OFFER_PORT = 12345
+CHUNK_SIZE = 1024
+OFFER_MESSAGE_TYPE = 0x2
+REQUEST_MESSAGE_TYPE = 0x3
 
 
 port_pool = Queue()
-for port in range(50000, 50100):  # Example port range for UDP connections
+for port in range(FIRST_UDP_PORT, LAST_UDP_PORT):
     port_pool.put(port)
 
 
@@ -32,17 +38,14 @@ def start_client():
 
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    udp_socket.bind(("", 12345))  # Bind to the broadcast port
+    udp_socket.bind(("", OFFER_PORT))  # Bind to the broadcast port
 
     print("Client started, listening for offer requests...")
-
-    expected_message_type = 0x2
-
     while True:
-        data, server_address = udp_socket.recvfrom(1024)
+        data, server_address = udp_socket.recvfrom(CHUNK_SIZE)
         try:
             magic_cookie, message_type, server_udp_port, server_tcp_port = struct.unpack('!I B H H', data)
-            if magic_cookie == EXPECTED_MAGIC_CO0KIE and message_type == expected_message_type:
+            if magic_cookie == EXPECTED_MAGIC_CO0KIE and message_type == OFFER_MESSAGE_TYPE:
                 print(f"Received offer from {server_address[0]}")
 
                 tcp_thread = threading.Thread(target=tcp_connection, args=(server_tcp_port, server_address[0], file_size))
@@ -64,7 +67,7 @@ def tcp_connection(server_port, server_ip, file_size):
             message = f"{file_size}\n"
             print(time.time())
             tcp_socket.sendall(message.encode())
-            response = tcp_socket.recv(1024)
+            response = tcp_socket.recv(CHUNK_SIZE)
             print(f"Received from TCP server: {response.decode()}")
 
     except Exception as e:
@@ -73,8 +76,7 @@ def tcp_connection(server_port, server_ip, file_size):
 
 def udp_connection(server_port, server_ip):
     source_port = get_port()  # Get a port from the pool
-    message_type = 0x3
-    magic_cookie = 0xabcddcba  # 4 bytes
+    message_type = REQUEST_MESSAGE_TYPE
     file_size = 1234567890  # 8 bytes (example file size)
 
     # Pack the values into a binary structure
@@ -84,10 +86,10 @@ def udp_connection(server_port, server_ip):
             udp_socket.bind(('', source_port))
             print(f"UDP connection bound to port {source_port}")
 
-            message = struct.pack('!I B Q', magic_cookie, message_type, file_size)
+            message = struct.pack('!I B Q', EXPECTED_MAGIC_CO0KIE, message_type, file_size)
             print(time.time())
             udp_socket.sendto(message, (server_ip, server_port))
-            response, addr = udp_socket.recvfrom(1024)
+            response, addr = udp_socket.recvfrom(CHUNK_SIZE)
             print(f"Received from UDP server: {response.decode()}")
 
     except Exception as e:
